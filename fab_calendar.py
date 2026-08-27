@@ -108,35 +108,66 @@ def build_session() -> requests.Session:
     session = requests.Session()
     session.headers.update({
         "User-Agent": (
-            "FABCommunityCalendar/2.0 "
-            "(community calendar generator; low-frequency public-page fetcher)"
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/140.0.0.0 Safari/537.36"
         ),
-        "Accept": "text/html,application/xhtml+xml",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
     })
     return session
 
 def fetch_soup(session: requests.Session, url: str) -> BeautifulSoup:
     response = session.get(url, timeout=35)
-    response.raise_for_status()
+    if not response.ok:
+        preview = normalize(response.text[:500])
+        raise RuntimeError(
+            f"FAB request failed: HTTP {response.status_code} for {response.url}. "
+            f"Response preview: {preview!r}"
+        )
     return BeautifulSoup(response.text, "html.parser")
 
-def discover_event_types(soup: BeautifulSoup) -> list[str]:
+def discover_event_types(soup: BeautifulSoup) -> list[tuple[str, str]]:
     """
-    Discover FAB's current Tournament Type labels from the page instead of
-    hard-coding season names such as 'Skirmish Season 15'.
+    Discover FAB's current Tournament Type labels and option values from the
+    legacy server-rendered event-search form.
     """
-    best: list[str] = []
+    best: list[tuple[str, str]] = []
+
     for select in soup.find_all("select"):
-        options = [normalize(x.get_text(" ", strip=True)) for x in select.find_all("option")]
-        joined = " ".join(options).casefold()
-        if "armory" in joined and ("skirmish" in joined or "calling" in joined):
-            candidate = [
-                x for x in options
-                if x and folded(x) not in {"any", "any type", "tournament type"}
-            ]
-            if len(candidate) > len(best):
-                best = candidate
-    return sorted(set(best), key=lambda x: (-len(x), x.casefold()))
+        options: list[tuple[str, str]] = []
+        labels: list[str] = []
+
+        for option in select.find_all("option"):
+            label = normalize(option.get_text(" ", strip=True))
+            value = normalize(option.get("value", ""))
+            if label:
+                labels.append(label)
+            if (
+                label
+                and value
+                and folded(label) not in {"any", "any type", "tournament type"}
+            ):
+                options.append((label, value))
+
+        joined = " ".join(labels).casefold()
+        if "armory" in joined and (
+            "calling" in joined
+            or "pro quest" in joined
+            or "world premiere" in joined
+        ):
+            if len(options) > len(best):
+                best = options
+
+    seen = set()
+    result: list[tuple[str, str]] = []
+    for label, value in best:
+        key = (label.casefold(), value)
+        if key not in seen:
+            seen.add(key)
+            result.append((label, value))
+    return result
 
 def split_heading(title: str, event_types: list[str]) -> tuple[str, str]:
     """
@@ -309,62 +340,112 @@ def parse_page(
     return list(events.values())
 
 def scrape(config: dict) -> tuple[list[FabEvent], list[str]]:
+    """
+    Scrape FAB's official legacy event search using explicit query parameters.
+
+    The bare legacy URL can fail, while seeded event-search requests remain
+    server-rendered. We use Armory (type=2) only to discover the current
+    Tournament Type selector, then crawl every discovered event type.
+    """
     session = build_session()
     base = config["source_url"]
-    first_soup = fetch_soup(session, base)
-    event_types = discover_event_types(first_soup)
-    if not event_types:
-        raise RuntimeError("Could not discover FAB Tournament Type options.")
-
-    print("Discovered event types:")
-    for event_type in event_types:
-        print(f"  - {event_type}")
-
-    all_events: dict[str, FabEvent] = {}
-    seen_page_fingerprints: set[str] = set()
-    max_pages = int(config.get("max_pages", 500))
+    mode = config.get("source_mode", "event")
+    seed_type = str(config.get("seed_event_type", "2"))
     delay = float(config.get("request_delay_seconds", 0.30))
+    max_pages = int(config.get("max_pages_per_type", 150))
 
-    for page_num in range(1, max_pages + 1):
-        if page_num == 1:
-            soup = first_soup
-            url = base
-        else:
-            url = f"{base}?{urlencode({'page': page_num})}"
-            soup = fetch_soup(session, url)
+    seed_params = {
+        "format": "",
+        "type": seed_type,
+        "query": "",
+        "mode": mode,
+        "page": 1,
+    }
+    seed_url = f"{base}?{urlencode(seed_params)}"
+    print(f"Loading FAB event-search seed: {seed_url}", flush=True)
+    seed_soup = fetch_soup(session, seed_url)
 
-        page_events = parse_page(soup, url, event_types, config)
-        if not page_events:
-            print(f"Page {page_num}: no events; stopping.")
-            break
-
-        fingerprint = short_hash("|".join(sorted(e.uid for e in page_events)), 32)
-        if fingerprint in seen_page_fingerprints:
-            print(f"Page {page_num}: repeated result page; stopping.")
-            break
-        seen_page_fingerprints.add(fingerprint)
-
-        before = len(all_events)
-        for event in page_events:
-            all_events[event.uid] = event
-        added = len(all_events) - before
-        print(f"Page {page_num}: {len(page_events)} events ({added} new)")
-
-        if page_num > 1 and added == 0:
-            print("No new events on page; stopping.")
-            break
-
-        time.sleep(delay)
-    else:
+    discovered = discover_event_types(seed_soup)
+    if not discovered:
         raise RuntimeError(
-            f"Reached max_pages={max_pages}; increase the limit after confirming "
-            "the FAB event search really has more pages."
+            "Could not discover FAB Tournament Type options from the seeded "
+            "legacy event search."
         )
 
-    return (
-        sorted(all_events.values(), key=lambda e: (e.event_date, e.title.casefold())),
-        event_types,
+    event_type_labels = [label for label, _ in discovered]
+
+    print("Discovered FAB event types:", flush=True)
+    for label, value in discovered:
+        print(f"  - {label} => {value}", flush=True)
+
+    all_events: dict[str, FabEvent] = {}
+
+    for label, type_value in discovered:
+        print(f"Scraping event type: {label}", flush=True)
+        seen_page_fingerprints: set[str] = set()
+
+        for page_num in range(1, max_pages + 1):
+            params = {
+                "format": "",
+                "type": type_value,
+                "query": "",
+                "mode": mode,
+                "page": page_num,
+            }
+            url = f"{base}?{urlencode(params)}"
+
+            if type_value == seed_type and page_num == 1:
+                soup = seed_soup
+            else:
+                soup = fetch_soup(session, url)
+
+            page_events = parse_page(
+                soup,
+                url,
+                event_type_labels,
+                config,
+            )
+
+            if not page_events:
+                print(
+                    f"  page {page_num}: no matching events; stopping this type.",
+                    flush=True,
+                )
+                break
+
+            fingerprint = short_hash(
+                "|".join(sorted(event.uid for event in page_events)),
+                32,
+            )
+            if fingerprint in seen_page_fingerprints:
+                print(
+                    f"  page {page_num}: repeated page; stopping this type.",
+                    flush=True,
+                )
+                break
+            seen_page_fingerprints.add(fingerprint)
+
+            before = len(all_events)
+            for event in page_events:
+                all_events[event.uid] = event
+            added = len(all_events) - before
+
+            print(
+                f"  page {page_num}: {len(page_events)} parsed, {added} new",
+                flush=True,
+            )
+            time.sleep(delay)
+        else:
+            raise RuntimeError(
+                f"Reached max_pages_per_type={max_pages} while scraping "
+                f"{label!r}."
+            )
+
+    events = sorted(
+        all_events.values(),
+        key=lambda event: (event.event_date, event.title.casefold()),
     )
+    return events, event_type_labels
 
 def load_previous_state() -> tuple[dict[str, FabEvent], list[str]]:
     if not STATE_PATH.exists():
@@ -583,6 +664,8 @@ def write_outputs(events: list[FabEvent], config: dict):
 
     global_events = [e for e in events if is_global_event(e, config)]
     write_feed(FEEDS / "all.ics", global_events, config["calendar_name"])
+    # Root compatibility URL for easy manual subscription on phones.
+    write_feed(DOCS / "all.ics", global_events, config["calendar_name"])
 
     for category, patterns in config["global_feed_categories"].items():
         subset = [e for e in global_events if match_category(e, patterns)]

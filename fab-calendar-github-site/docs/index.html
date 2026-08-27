@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Community-maintained Flesh and Blood event subscription calendars.">
+  <title>FAB Community Event Calendar</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div>
+        <p class="eyebrow">COMMUNITY CALENDAR</p>
+        <h1>Flesh and Blood Events</h1>
+        <p class="lede">Subscribe once. Major events and your local game store stay updated automatically.</p>
+      </div>
+      <div class="status-pill" id="statusPill">Loading event data…</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="panel hero-panel">
+      <div>
+        <h2>Choose your local game store</h2>
+        <p>
+          Search by store name, city, state, province, or address. Your combined feed includes
+          the major FAB events we track plus every upcoming FAB event listed for that store.
+        </p>
+      </div>
+
+      <label class="search-label" for="storeSearch">Local game store</label>
+      <div class="search-wrap">
+        <input
+          id="storeSearch"
+          type="search"
+          autocomplete="off"
+          placeholder="Try a store name, Pittsburgh, PA, 16115…"
+          aria-controls="storeResults"
+        >
+        <button id="clearSearch" class="ghost-button" type="button">Clear</button>
+      </div>
+      <div id="storeResults" class="store-results" role="listbox" aria-label="Matching stores"></div>
+
+      <div id="selectedStore" class="selected-store hidden" aria-live="polite">
+        <div class="selected-heading">
+          <div>
+            <p class="eyebrow">YOUR STORE</p>
+            <h3 id="selectedStoreName"></h3>
+            <p id="selectedStoreLocation" class="muted"></p>
+            <p><a id="officialStoreLink" class="store-link" target="_blank" rel="noopener">View official FAB store page ↗</a></p>
+          </div>
+          <button id="changeStore" class="ghost-button" type="button">Change</button>
+        </div>
+
+        <div class="feed-card featured-feed">
+          <div>
+            <p class="eyebrow">RECOMMENDED</p>
+            <h4>Major FAB events + this store</h4>
+            <p id="combinedDescription" class="muted"></p>
+          </div>
+          <div class="button-row">
+            <a id="googleCombined" class="button primary" target="_blank" rel="noopener">Add to Google Calendar</a>
+            <a id="webcalCombined" class="button" href="#">Apple / Outlook</a>
+            <button id="copyCombined" class="button secondary" type="button">Copy feed URL</button>
+          </div>
+        </div>
+
+        <details class="advanced">
+          <summary>Store-only calendar</summary>
+          <p class="muted">
+            Use this if you prefer the major-event feed and your local-store feed as separate calendars.
+          </p>
+          <div class="button-row">
+            <a id="googleStoreOnly" class="button" target="_blank" rel="noopener">Google Calendar</a>
+            <a id="webcalStoreOnly" class="button" href="#">Apple / Outlook</a>
+            <button id="copyStoreOnly" class="button secondary" type="button">Copy feed URL</button>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">GLOBAL FEEDS</p>
+          <h2>Subscribe by event series</h2>
+        </div>
+        <p class="muted">No local store required.</p>
+      </div>
+
+      <div class="feed-grid">
+        <article class="feed-card">
+          <h3>All tracked competitive events</h3>
+          <p>Callings, Skirmish, ProQuest, Road to Nationals, Battlegrounds, and other major series.</p>
+          <div class="mini-actions" data-feed="feeds/all.ics"></div>
+        </article>
+        <article class="feed-card">
+          <h3>Callings</h3>
+          <p>Calling events only.</p>
+          <div class="mini-actions" data-feed="feeds/calling.ics"></div>
+        </article>
+        <article class="feed-card">
+          <h3>Skirmish</h3>
+          <p>Current Skirmish season events.</p>
+          <div class="mini-actions" data-feed="feeds/skirmish.ics"></div>
+        </article>
+        <article class="feed-card">
+          <h3>ProQuest</h3>
+          <p>ProQuest and ProQuest+ events.</p>
+          <div class="mini-actions" data-feed="feeds/proquest.ics"></div>
+        </article>
+        <article class="feed-card">
+          <h3>Road to Nationals</h3>
+          <p>Road to Nationals events.</p>
+          <div class="mini-actions" data-feed="feeds/rtn.ics"></div>
+        </article>
+        <article class="feed-card">
+          <h3>Battlegrounds</h3>
+          <p>Battlegrounds events.</p>
+          <div class="mini-actions" data-feed="feeds/battlegrounds.ics"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel info-panel">
+      <h2>How subscriptions work</h2>
+      <div class="steps">
+        <div><span>1</span><p>Pick your store or a global feed.</p></div>
+        <div><span>2</span><p>Add the subscription URL to your calendar app.</p></div>
+        <div><span>3</span><p>The feed regenerates automatically from FAB event listings.</p></div>
+      </div>
+      <p class="muted small">
+        Calendar applications decide how often they refresh subscribed feeds, so a FAB change may not
+        appear in every calendar app immediately.
+      </p>
+    </section>
+  </main>
+
+  <footer class="wrap site-footer">
+    <p>
+      Community project. Not affiliated with or endorsed by Legend Story Studios.
+      Flesh and Blood and related marks belong to their respective owners.
+    </p>
+    <p id="lastUpdated"></p>
+  </footer>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>

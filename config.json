@@ -1,6 +1,6 @@
 {
   "calendar_name": "FAB Community Events",
-  "source_url": "https://legacy.fabtcg.com/en/events/",
+  "source_url": "https://fabtcg.com/en/events/",
   "global_event_patterns": [
     "calling",
     "skirmish",
